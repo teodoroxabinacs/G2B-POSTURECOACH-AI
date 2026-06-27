@@ -2,13 +2,18 @@
 
 Previous (v2) Streamlit UI is preserved in app_v2_backup.py.
 """
+import os          # ← ADD THIS
 import time
 import streamlit as st
 
+DEMO_MODE = os.environ.get("G2B_DEMO_MODE", "0") == "1"   # ← ADD THIS
+
 from src.workers.shared_state import SharedPostureState
-from src.workers.cv_worker import CVWorker
 from src.workers.chat_worker import ChatWorker
-from src.utils.config import mediapipe_complexity, target_fps, camera_resolution
+
+if not DEMO_MODE:                                           # ← ADD THIS
+    from src.workers.cv_worker import CVWorker
+    from src.utils.config import mediapipe_complexity, target_fps, camera_resolution
 
 st.set_page_config(page_title="G2B Posture Coach", layout="wide")
 
@@ -17,18 +22,22 @@ st.caption("Live posture analysis + AI coaching — built for Raspberry Pi 5")
 
 # === Init singletons (survive across reruns) ===
 if "shared" not in st.session_state:
-    w, h = camera_resolution()
     st.session_state.shared = SharedPostureState()
-    st.session_state.cv_worker = CVWorker(
-        st.session_state.shared,
-        width=w, height=h,
-        model_complexity=mediapipe_complexity(),
-        target_fps=target_fps(),
-    )
-    st.session_state.cv_worker.start()
     st.session_state.chat_worker = ChatWorker(st.session_state.shared)
     st.session_state.chat_history = []
 
+    if not DEMO_MODE:                                       # ← ADD THIS
+        w, h = camera_resolution()
+        st.session_state.cv_worker = CVWorker(
+            st.session_state.shared,
+            width=w, height=h,
+            model_complexity=mediapipe_complexity(),
+            target_fps=target_fps(),
+        )
+        st.session_state.cv_worker.start()
+    else:
+        from demo_state import get_demo_state               # ← ADD THIS
+        st.session_state.shared.update(get_demo_state())
 # === Session summary bar ===
 summary_slot = st.empty()
 

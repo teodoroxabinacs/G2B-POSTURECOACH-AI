@@ -1,0 +1,7 @@
+streamlit
+groq
+python-dotenv
+sentence-transformers
+rank-bm25
+numpy
+lightgbm
