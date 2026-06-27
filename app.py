@@ -2,16 +2,16 @@
 
 Previous (v2) Streamlit UI is preserved in app_v2_backup.py.
 """
-import os          # ← ADD THIS
+import os
 import time
 import streamlit as st
 
-DEMO_MODE = os.environ.get("G2B_DEMO_MODE", "0") == "1"   # ← ADD THIS
+DEMO_MODE = os.environ.get("G2B_DEMO_MODE", "0") == "1"
 
 from src.workers.shared_state import SharedPostureState
 from src.workers.chat_worker import ChatWorker
 
-if not DEMO_MODE:                                           # ← ADD THIS
+if not DEMO_MODE:
     from src.workers.cv_worker import CVWorker
     from src.utils.config import mediapipe_complexity, target_fps, camera_resolution
 
@@ -26,7 +26,7 @@ if "shared" not in st.session_state:
     st.session_state.chat_worker = ChatWorker(st.session_state.shared)
     st.session_state.chat_history = []
 
-    if not DEMO_MODE:                                       # ← ADD THIS
+    if not DEMO_MODE:
         w, h = camera_resolution()
         st.session_state.cv_worker = CVWorker(
             st.session_state.shared,
@@ -36,8 +36,10 @@ if "shared" not in st.session_state:
         )
         st.session_state.cv_worker.start()
     else:
-        from demo_state import get_demo_state               # ← ADD THIS
+        from demo_state import get_demo_state
         st.session_state.shared.update(get_demo_state())
+        st.info("📷 Demo mode — webcam disabled. Posture is simulated as 'Slouching'.")
+
 # === Session summary bar ===
 summary_slot = st.empty()
 
@@ -46,6 +48,8 @@ left, right = st.columns([1, 1])
 
 with left:
     st.subheader("Live view")
+    if DEMO_MODE:
+        st.info("📷 No webcam in demo mode. Chat with the coach on the right →")
     frame_slot = st.empty()
     state_slot = st.empty()
     metrics_slot = st.empty()
@@ -79,10 +83,16 @@ LABEL_EMOJI = {
     "lean":            "🟣",
 }
 for _ in range(20):  # ~4 seconds of refresh, then st.rerun()
-    frame = st.session_state.cv_worker.latest_frame()
+    if not DEMO_MODE:
+        # frame = st.session_state.cv_worker.latest_frame()
+        if os.environ.get("G2B_DEMO_MODE", "0") == "1":
+            frame = None  # Or whatever default fallback frame logic your app uses for demo
+        else:
+            frame = st.session_state.cv_worker.latest_frame() if "cv_worker" in st.session_state else None
+        if frame is not None:
+            frame_slot.image(frame, channels="BGR", use_column_width=True)
+
     state = st.session_state.shared.snapshot()
-    if frame is not None:
-        frame_slot.image(frame, channels="BGR", use_column_width=True)
     if state is not None:
         emoji = LABEL_EMOJI.get(state.posture_class, "")
         state_slot.markdown(
