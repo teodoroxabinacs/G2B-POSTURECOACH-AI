@@ -5,7 +5,8 @@ opencv-python-headless
 numpy
 groq
 python-dotenv
+torch
+torchvision
 sentence-transformers
 rank-bm25
-numpy
 lightgbm
