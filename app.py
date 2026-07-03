@@ -10,6 +10,7 @@ DEMO_MODE = os.environ.get("G2B_DEMO_MODE", "0") == "1"
 
 from src.workers.shared_state import SharedPostureState
 from src.workers.chat_worker import ChatWorker
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
 if not DEMO_MODE:
     from src.workers.cv_worker import CVWorker
@@ -83,15 +84,19 @@ LABEL_EMOJI = {
     "lean":            "🟣",
 }
 for _ in range(20):  # ~4 seconds of refresh, then st.rerun()
+    # 1. Handle live view frame rendering within the execution loop
     if not DEMO_MODE:
         if os.environ.get("G2B_DEMO_MODE", "0") == "1":
             frame = None
+            # Optional: You can load an informational placeholder text or image once here
+            frame_slot.info("📷 No webcam in demo mode. Chat with the coach on the right →")
         else:
             frame = st.session_state.cv_worker.latest_frame() if "cv_worker" in st.session_state else None
             
         if frame is not None:
             frame_slot.image(frame, channels="BGR", use_column_width=True)
 
+    # 2. Extract layout generation out of the loop state updating block
     state = st.session_state.shared.snapshot()
     if state is not None:
         emoji = LABEL_EMOJI.get(state.posture_class, "")
@@ -100,20 +105,24 @@ for _ in range(20):  # ~4 seconds of refresh, then st.rerun()
             f"`conf={state.confidence:.2f}`  "
             f"_(holding for {state.posture_duration_sec:.0f}s)_"
         )
-        cols = metrics_slot.columns(3)
-        cols[0].metric("Forward head", f"{state.ear_shoulder_offset_x:+.2f}",
-                       delta=f"{state.feature_deviations['forward_head']:.2f}")
-        cols[1].metric("Shoulder roll", f"{state.shoulder_roll_z:+.2f}",
-                       delta=f"{state.feature_deviations['shoulder_roll']:.2f}")
-        cols[2].metric("Tilt", f"{state.shoulder_tilt_angle:+.1f}°",
-                       delta=f"{state.feature_deviations['shoulder_tilt']:.1f}")
+        
+        # We target the existing containers directly to prevent duplication stacking
+        with metrics_slot.container():
+            cols = st.columns(3)
+            cols[0].metric("Forward head", f"{state.ear_shoulder_offset_x:+.2f}",
+                           delta=f"{state.feature_deviations['forward_head']:.2f}")
+            cols[1].metric("Shoulder roll", f"{state.shoulder_roll_z:+.2f}",
+                           delta=f"{state.feature_deviations['shoulder_roll']:.2f}")
+            cols[2].metric("Tilt", f"{state.shoulder_tilt_angle:+.1f}°",
+                           delta=f"{state.feature_deviations['shoulder_tilt']:.1f}")
 
-        scols = summary_slot.columns(4)
-        scols[0].metric("Session", f"{state.session_duration_sec/60:.1f} min")
-        scols[1].metric("Correct posture",
-                        f"{state.posture_distribution.get('correct_posture', 0)*100:.0f}%")
-        scols[2].metric("Corrections", state.correction_events)
-        scols[3].metric("Worst streak", f"{state.longest_bad_posture_streak_sec:.0f}s")
+        with summary_slot.container():
+            scols = st.columns(4)
+            scols[0].metric("Session", f"{state.session_duration_sec/60:.1f} min")
+            scols[1].metric("Correct posture",
+                            f"{state.posture_distribution.get('correct_posture', 0)*100:.0f}%")
+            scols[2].metric("Corrections", state.correction_events)
+            scols[3].metric("Worst streak", f"{state.longest_bad_posture_streak_sec:.0f}s")
         
     time.sleep(0.2)
 
