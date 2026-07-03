@@ -84,11 +84,11 @@ LABEL_EMOJI = {
 }
 for _ in range(20):  # ~4 seconds of refresh, then st.rerun()
     if not DEMO_MODE:
-        # frame = st.session_state.cv_worker.latest_frame()
         if os.environ.get("G2B_DEMO_MODE", "0") == "1":
-            frame = None  # Or whatever default fallback frame logic your app uses for demo
+            frame = None
         else:
             frame = st.session_state.cv_worker.latest_frame() if "cv_worker" in st.session_state else None
+            
         if frame is not None:
             frame_slot.image(frame, channels="BGR", use_column_width=True)
 
@@ -114,6 +114,7 @@ for _ in range(20):  # ~4 seconds of refresh, then st.rerun()
                         f"{state.posture_distribution.get('correct_posture', 0)*100:.0f}%")
         scols[2].metric("Corrections", state.correction_events)
         scols[3].metric("Worst streak", f"{state.longest_bad_posture_streak_sec:.0f}s")
+        
     time.sleep(0.2)
 
 st.rerun()
