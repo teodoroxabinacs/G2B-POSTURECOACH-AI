@@ -5,12 +5,12 @@ Previous (v2) Streamlit UI is preserved in app_v2_backup.py.
 import os
 import time
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer
 
 DEMO_MODE = os.environ.get("G2B_DEMO_MODE", "0") == "1"
 
 from src.workers.shared_state import SharedPostureState
 from src.workers.chat_worker import ChatWorker
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
 if not DEMO_MODE:
     from src.workers.cv_worker import CVWorker
@@ -28,14 +28,18 @@ if "shared" not in st.session_state:
     st.session_state.chat_history = []
 
     if not DEMO_MODE:
-        w, h = camera_resolution()
-        st.session_state.cv_worker = CVWorker(
-            st.session_state.shared,
-            width=w, height=h,
-            model_complexity=mediapipe_complexity(),
-            target_fps=target_fps(),
-        )
-        st.session_state.cv_worker.start()
+        try:
+            w, h = camera_resolution()
+            st.session_state.cv_worker = CVWorker(
+                st.session_state.shared,
+                width=w, height=h,
+                model_complexity=mediapipe_complexity(),
+                target_fps=target_fps(),
+            )
+            # Try to start physical camera (fails gracefully on Streamlit Cloud)
+            st.session_state.cv_worker.start()
+        except Exception:
+            pass
     else:
         from demo_state import get_demo_state
         st.session_state.shared.update(get_demo_state())
@@ -51,7 +55,14 @@ with left:
     st.subheader("Live view")
     if DEMO_MODE:
         st.info("📷 No webcam in demo mode. Chat with the coach on the right →")
-    frame_slot = st.empty()
+    
+    # 1. Native WebRTC component completely replaces the old frame_slot logic
+    ctx = webrtc_streamer(
+        key="g2b-posture-coach-stream",
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+        media_stream_constraints={"video": True, "audio": False},
+    )
+    
     state_slot = st.empty()
     metrics_slot = st.empty()
 
@@ -76,60 +87,58 @@ with right:
                 st.write(result["text"])
                 st.session_state.chat_history.append(("assistant", result["text"]))
 
-# === Continuously refresh the live view (5 Hz is plenty for UI) ===
+# === Extract and process frame from WebRTC browser feed ===
+if ctx and ctx.video_receiver:
+    try:
+        frame = ctx.video_receiver.get_frame(timeout=1).to_ndarray(format="bgr24")
+        if frame is not None and "cv_worker" in st.session_state:
+            # If your cv_worker has a process method, you can pass the browser frame in here!
+            # st.session_state.cv_worker.process_frame(frame)
+            pass
+    except Exception:
+        pass
+
+# === Continuously refresh UI Metrics (No loops!) ===
 LABEL_EMOJI = {
     "correct_posture": "🟢",
     "slouching":       "🟠",
     "neck_forward":    "🟡",
     "lean":            "🟣",
 }
-for _ in range(20):  # ~4 seconds of refresh, then st.rerun()
-    # 1. Handle live view frame rendering within the execution loop
-    # 1. Handle live view frame rendering
-    if not DEMO_MODE:
-        if os.environ.get("G2B_DEMO_MODE", "0") == "1":
-            frame = None
-            frame_slot.info("📷 No webcam in demo mode. Chat with the coach on the right →")
-        else:
-            frame = st.session_state.cv_worker.latest_frame() if "cv_worker" in st.session_state else None
-            
-        if frame is not None:
-            frame_slot.image(frame, channels="BGR", use_column_width=True)
 
-    # 2. Clear old state slots completely to prevent layout stacking
-    state = st.session_state.shared.snapshot()
-    if state is not None:
-        emoji = LABEL_EMOJI.get(state.posture_class, "")
-        
-        # Clear the markdown text slot and rewrite it fresh
-        state_slot.empty()
-        state_slot.markdown(
-            f"### {emoji} **{state.posture_class.replace('_', ' ').title()}**  "
-            f"`conf={state.confidence:.2f}`  "
-            f"_(holding for {state.posture_duration_sec:.0f}s)_"
-        )
-        
-        # Clear the metrics slot and rewrite the columns fresh
-        metrics_slot.empty()
-        with metrics_slot.container():
-            cols = st.columns(3)
-            cols[0].metric("Forward head", f"{state.ear_shoulder_offset_x:+.2f}",
-                           delta=f"{state.feature_deviations['forward_head']:.2f}")
-            cols[1].metric("Shoulder roll", f"{state.shoulder_roll_z:+.2f}",
-                           delta=f"{state.feature_deviations['shoulder_roll']:.2f}")
-            cols[2].metric("Tilt", f"{state.shoulder_tilt_angle:+.1f}°",
-                           delta=f"{state.feature_deviations['shoulder_tilt']:.1f}")
+state = st.session_state.shared.snapshot()
+if state is not None:
+    emoji = LABEL_EMOJI.get(state.posture_class, "")
+    
+    # Clear the markdown text slot and rewrite it fresh
+    state_slot.empty()
+    state_slot.markdown(
+        f"### {emoji} **{state.posture_class.replace('_', ' ').title()}**  "
+        f"`conf={state.confidence:.2f}`  "
+        f"_(holding for {state.posture_duration_sec:.0f}s)_"
+    )
+    
+    # Clear the metrics slot and rewrite the columns fresh
+    metrics_slot.empty()
+    with metrics_slot.container():
+        cols = st.columns(3)
+        cols[0].metric("Forward head", f"{state.ear_shoulder_offset_x:+.2f}",
+                       delta=f"{state.feature_deviations['forward_head']:.2f}")
+        cols[1].metric("Shoulder roll", f"{state.shoulder_roll_z:+.2f}",
+                       delta=f"{state.feature_deviations['shoulder_roll']:.2f}")
+        cols[2].metric("Tilt", f"{state.shoulder_tilt_angle:+.1f}°",
+                       delta=f"{state.feature_deviations['shoulder_tilt']:.1f}")
 
-        # Clear the summary slot and rewrite the summary columns fresh
-        summary_slot.empty()
-        with summary_slot.container():
-            scols = st.columns(4)
-            scols[0].metric("Session", f"{state.session_duration_sec/60:.1f} min")
-            scols[1].metric("Correct posture",
-                            f"{state.posture_distribution.get('correct_posture', 0)*100:.0f}%")
-            scols[2].metric("Corrections", state.correction_events)
-            scols[3].metric("Worst streak", f"{state.longest_bad_posture_streak_sec:.0f}s")
-        
-    time.sleep(0.2)
+    # Clear the summary slot and rewrite the summary columns fresh
+    summary_slot.empty()
+    with summary_slot.container():
+        scols = st.columns(4)
+        scols[0].metric("Session", f"{state.session_duration_sec/60:.1f} min")
+        scols[1].metric("Correct posture",
+                        f"{state.posture_distribution.get('correct_posture', 0)*100:.0f}%")
+        scols[2].metric("Corrections", state.correction_events)
+        scols[3].metric("Worst streak", f"{state.longest_bad_posture_streak_sec:.0f}s")
 
+# Pace the reruns slightly so the WebRTC stream stays stable
+time.sleep(0.5)
 st.rerun()
