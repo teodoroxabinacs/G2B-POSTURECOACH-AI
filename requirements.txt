@@ -1,4 +1,8 @@
 streamlit
+streamlit-webrtc
+mediapipe
+opencv-python-headless
+numpy
 groq
 python-dotenv
 sentence-transformers
