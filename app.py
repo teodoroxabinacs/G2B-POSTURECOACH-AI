@@ -87,7 +87,7 @@ for _ in range(20):  # ~4 seconds of refresh, then st.rerun()
         # frame = st.session_state.cv_worker.latest_frame()
         if os.environ.get("G2B_DEMO_MODE", "0") == "1":
             frame = None  # Or whatever default fallback frame logic your app uses for demo
-        git add .else:
+        else:
             frame = st.session_state.cv_worker.latest_frame() if "cv_worker" in st.session_state else None
         if frame is not None:
             frame_slot.image(frame, channels="BGR", use_column_width=True)
