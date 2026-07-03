@@ -85,10 +85,10 @@ LABEL_EMOJI = {
 }
 for _ in range(20):  # ~4 seconds of refresh, then st.rerun()
     # 1. Handle live view frame rendering within the execution loop
+    # 1. Handle live view frame rendering
     if not DEMO_MODE:
         if os.environ.get("G2B_DEMO_MODE", "0") == "1":
             frame = None
-            # Optional: You can load an informational placeholder text or image once here
             frame_slot.info("📷 No webcam in demo mode. Chat with the coach on the right →")
         else:
             frame = st.session_state.cv_worker.latest_frame() if "cv_worker" in st.session_state else None
@@ -96,17 +96,21 @@ for _ in range(20):  # ~4 seconds of refresh, then st.rerun()
         if frame is not None:
             frame_slot.image(frame, channels="BGR", use_column_width=True)
 
-    # 2. Extract layout generation out of the loop state updating block
+    # 2. Clear old state slots completely to prevent layout stacking
     state = st.session_state.shared.snapshot()
     if state is not None:
         emoji = LABEL_EMOJI.get(state.posture_class, "")
+        
+        # Clear the markdown text slot and rewrite it fresh
+        state_slot.empty()
         state_slot.markdown(
             f"### {emoji} **{state.posture_class.replace('_', ' ').title()}**  "
             f"`conf={state.confidence:.2f}`  "
             f"_(holding for {state.posture_duration_sec:.0f}s)_"
         )
         
-        # We target the existing containers directly to prevent duplication stacking
+        # Clear the metrics slot and rewrite the columns fresh
+        metrics_slot.empty()
         with metrics_slot.container():
             cols = st.columns(3)
             cols[0].metric("Forward head", f"{state.ear_shoulder_offset_x:+.2f}",
@@ -116,6 +120,8 @@ for _ in range(20):  # ~4 seconds of refresh, then st.rerun()
             cols[2].metric("Tilt", f"{state.shoulder_tilt_angle:+.1f}°",
                            delta=f"{state.feature_deviations['shoulder_tilt']:.1f}")
 
+        # Clear the summary slot and rewrite the summary columns fresh
+        summary_slot.empty()
         with summary_slot.container():
             scols = st.columns(4)
             scols[0].metric("Session", f"{state.session_duration_sec/60:.1f} min")
