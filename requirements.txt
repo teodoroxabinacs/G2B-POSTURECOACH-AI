@@ -1,6 +1,7 @@
 streamlit
 streamlit-webrtc
 mediapipe
+protobuf==4.25.3
 opencv-python-headless
 numpy
 groq
