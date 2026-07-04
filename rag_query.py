@@ -49,7 +49,7 @@ def answer(user_question: str, state: PostureState) -> dict:
         conf_note = "" if state.is_reliable else " (partial view)"
         expanded = (f"{user_question} "
                     f"[posture: {state.posture_class}{conf_note}, "
-                    f"issue: {state.primary_issue}]")
+                    f"issue: {state.posture_class}"
 
     retrieved = retriever.retrieve(expanded, current_posture=posture, top_k=5)
     messages = build_prompt(state, retrieved, user_question)

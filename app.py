@@ -63,29 +63,35 @@ class PostureProcessor(VideoProcessorBase):
     def __init__(self):
         # Queue to securely pass real-time AI data to the Streamlit UI
         self.result_queue = queue.Queue()
-        # Initialize your actual Mapúa thesis AI pipeline!
-        self.pipe = PosturePipeline(model_complexity=1)
+        
+        # 1. IMPORTANT: Leave the pipeline empty during the initial setup!
+        # Do not initialize PosturePipeline here to avoid the WebRTC thread crash.
+        self.pipe = None 
         
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+        # 2. IMPORTANT: Boot MediaPipe ONLY when the first video frame arrives
+        if self.pipe is None:
+            # This ensures MediaPipe starts safely in the video thread
+            from src.cv.pipeline import PosturePipeline
+            self.pipe = PosturePipeline(model_complexity=1)
+
         # Convert web frame to an image array
         img = frame.to_ndarray(format="bgr24")
         h, w, _ = img.shape
         
-        # 1. PROCESS AI HERE: 
-        # Pass the live web frame into your custom MediaPipe math
+        # 3. PROCESS AI HERE: 
         state = self.pipe.step(img)
         
         if state is not None:
-            # 2. DRAW BOUNDING BOX ON VIDEO
-            # Draws a green rectangle around the center of the frame
+            # DRAW BOUNDING BOX ON VIDEO
+            import cv2
             cv2.rectangle(img, (int(w*0.15), int(h*0.1)), (int(w*0.85), int(h*0.95)), (0, 255, 0), 2)
             
             # Draw the real-time verdict and accuracy text on the video feed
             label = f"{state.posture_class.upper()} | Conf: {state.confidence:.2f}"
             cv2.putText(img, label, (int(w*0.15), int(h*0.1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-            # 3. SEND TO UI
-            # Push the real calculated degrees to the Streamlit dashboard
+            # SEND TO UI
             self.result_queue.put({
                 "posture_class": state.posture_class,
                 "confidence": state.confidence,
@@ -95,7 +101,7 @@ class PostureProcessor(VideoProcessorBase):
             })
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
-    
+        
 # === Layout: two columns ===
 left, right = st.columns([1, 1])
 
