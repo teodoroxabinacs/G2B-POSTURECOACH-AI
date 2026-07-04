@@ -4,6 +4,7 @@ import queue
 import cv2
 import av
 import streamlit as st
+import threading 
 from src.cv.pipeline import PosturePipeline 
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 
@@ -62,38 +63,57 @@ if "shared" not in st.session_state:
 class PostureProcessor(VideoProcessorBase):
     def __init__(self):
         self.result_queue = queue.Queue()
-        self.pipe = None 
-        
-        # Add a frame counter and a memory variable for the last known posture
-        self.frame_count = 0
+        # Queue to hold exactly 1 frame for the AI to process
+        self.frame_queue = queue.Queue(maxsize=1) 
         self.last_state = None
         
-    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
-        if self.pipe is None:
-            from src.cv.pipeline import PosturePipeline
-            self.pipe = PosturePipeline(model_complexity=0)
+        # 1. Start a dedicated background thread JUST for MediaPipe
+        self.ai_thread = threading.Thread(target=self._run_ai, daemon=True)
+        self.ai_thread.start()
 
-        # Convert web frame to an image array
+    def _run_ai(self):
+        # Boot MediaPipe securely inside this separate thread
+        from src.cv.pipeline import PosturePipeline
+        pipe = PosturePipeline(model_complexity=0)
+        
+        while True:
+            try:
+                # Grab a frame from the video player (wait up to 1 second)
+                img = self.frame_queue.get(timeout=1.0)
+                
+                # RUN HEAVY AI MATH (This no longer blocks the video player!)
+                state = pipe.step(img)
+                
+                if state is not None:
+                    self.last_state = state
+                    
+                    # Clear out old dashboard results to prevent UI backlog
+                    while not self.result_queue.empty():
+                        self.result_queue.get_nowait()
+                        
+                    # Send fresh data to the Streamlit UI
+                    self.result_queue.put({
+                        "posture_class": state.posture_class,
+                        "confidence": state.confidence,
+                        "forward_head": state.ear_shoulder_offset_x,
+                        "shoulder_roll": state.shoulder_roll_z,
+                        "tilt": state.shoulder_tilt_angle
+                    })
+            except queue.Empty:
+                continue
+            except Exception:
+                pass
+
+    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
         img = frame.to_ndarray(format="bgr24")
         h, w, _ = img.shape
         
-        # 1. THROTTLE THE AI: Only run the heavy math every 5 frames
-        self.frame_count += 1
-        if self.frame_count % 5 == 0:
-            self.last_state = self.pipe.step(img)
-            
-            # Send updated data to the UI only when the AI actually runs
-            if self.last_state is not None:
-                self.result_queue.put({
-                    "posture_class": self.last_state.posture_class,
-                    "confidence": self.last_state.confidence,
-                    "forward_head": self.last_state.ear_shoulder_offset_x,
-                    "shoulder_roll": self.last_state.shoulder_roll_z,
-                    "tilt": self.last_state.shoulder_tilt_angle
-                })
+        # 2. FEED THE AI WITHOUT STOPPING THE VIDEO
+        # If the AI thread is free, toss it the current frame. If it's busy, skip it!
+        if self.frame_queue.empty():
+            self.frame_queue.put(img)
 
-        # 2. ALWAYS DRAW THE BOUNDING BOX (Prevents flickering)
-        # We use 'self.last_state' so the box stays on screen even on skipped frames
+        # 3. DRAW INSTANTLY
         if self.last_state is not None:
             import cv2
             cv2.rectangle(img, (int(w*0.15), int(h*0.1)), (int(w*0.85), int(h*0.95)), (0, 255, 0), 2)
@@ -101,7 +121,7 @@ class PostureProcessor(VideoProcessorBase):
             label = f"{self.last_state.posture_class.upper()} | Conf: {self.last_state.confidence:.2f}"
             cv2.putText(img, label, (int(w*0.15), int(h*0.1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-        # Return the video frame instantly to keep the camera feed smooth
+        # Return frame immediately so the camera NEVER freezes
         return av.VideoFrame.from_ndarray(img, format="bgr24")
         
 # === Layout: two columns ===
