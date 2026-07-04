@@ -63,35 +63,40 @@ if "shared" not in st.session_state:
 class PostureProcessor(VideoProcessorBase):
     def __init__(self):
         self.result_queue = queue.Queue()
-        # Queue to hold exactly 1 frame for the AI to process
+        # Create a tiny 1-frame queue to pass images safely to the background AI
         self.frame_queue = queue.Queue(maxsize=1) 
         self.last_state = None
         
-        # 1. Start a dedicated background thread JUST for MediaPipe
+        # This flag lets the UI know the AI is still cold-booting
+        self.ai_booting = True 
+
+        # Start the AI in the background immediately
         self.ai_thread = threading.Thread(target=self._run_ai, daemon=True)
         self.ai_thread.start()
 
     def _run_ai(self):
-        # Boot MediaPipe securely inside this separate thread
-        from src.cv.pipeline import PosturePipeline
-        pipe = PosturePipeline(model_complexity=0)
-        
-        while True:
-            try:
-                # Grab a frame from the video player (wait up to 1 second)
-                img = self.frame_queue.get(timeout=1.0)
-                
-                # RUN HEAVY AI MATH (This no longer blocks the video player!)
+        try:
+            from src.cv.pipeline import PosturePipeline
+            # Boot MediaPipe at lowest complexity for cloud speed
+            pipe = PosturePipeline(model_complexity=0)
+            self.ai_booting = False 
+            
+            while True:
+                # Wait for the next available webcam frame
+                img = self.frame_queue.get() 
                 state = pipe.step(img)
                 
                 if state is not None:
                     self.last_state = state
                     
-                    # Clear out old dashboard results to prevent UI backlog
+                    # Empty the queue so the Streamlit UI only gets the absolute freshest data
                     while not self.result_queue.empty():
-                        self.result_queue.get_nowait()
-                        
-                    # Send fresh data to the Streamlit UI
+                        try:
+                            self.result_queue.get_nowait()
+                        except queue.Empty:
+                            break
+                            
+                    # Send the actual degrees down to the dashboard metrics
                     self.result_queue.put({
                         "posture_class": state.posture_class,
                         "confidence": state.confidence,
@@ -99,29 +104,31 @@ class PostureProcessor(VideoProcessorBase):
                         "shoulder_roll": state.shoulder_roll_z,
                         "tilt": state.shoulder_tilt_angle
                     })
-            except queue.Empty:
-                continue
-            except Exception:
-                pass
+        except Exception as e:
+            print(f"AI Pipeline Crash: {e}")
 
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+        import cv2
         img = frame.to_ndarray(format="bgr24")
         h, w, _ = img.shape
         
-        # 2. FEED THE AI WITHOUT STOPPING THE VIDEO
-        # If the AI thread is free, toss it the current frame. If it's busy, skip it!
-        if self.frame_queue.empty():
-            self.frame_queue.put(img)
+        # Toss a frame to the AI only if the background room is empty
+        if not self.frame_queue.full():
+            self.frame_queue.put_nowait(img)
 
-        # 3. DRAW INSTANTLY
-        if self.last_state is not None:
-            import cv2
+        # --- DRAW VISUAL FEEDBACK ON THE VIDEO ---
+        if self.ai_booting:
+            # Still loading the heavy model on the cloud CPU...
+            cv2.putText(img, "Loading... (Wait 5-10s)", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
+        elif self.last_state is None:
+            # Model is awake but hasn't locked onto your body yet
+            cv2.putText(img, "ANALYZING... (Make sure shoulders are visible)", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        else:
+            # Locked in! Draw the bounding box and accuracy.
             cv2.rectangle(img, (int(w*0.15), int(h*0.1)), (int(w*0.85), int(h*0.95)), (0, 255, 0), 2)
-            
             label = f"{self.last_state.posture_class.upper()} | Conf: {self.last_state.confidence:.2f}"
             cv2.putText(img, label, (int(w*0.15), int(h*0.1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-        # Return frame immediately so the camera NEVER freezes
         return av.VideoFrame.from_ndarray(img, format="bgr24")
         
 # === Layout: two columns ===
