@@ -170,26 +170,24 @@ with left:
     cols[1].metric("Shoulder roll", f"{state.shoulder_roll_z:+.2f}")
     cols[2].metric("Tilt", f"{state.shoulder_tilt_angle:+.1f}°")
 
-with right:
-    st.subheader("Chat with your coach")
-    chat_area = st.container(height=600)
-    user_input = st.chat_input("Ask about your posture...")
-
-    with chat_area:
-        for role, text in st.session_state.chat_history:
-            with st.chat_message(role):
-                st.write(text)
-
-    if user_input:
-        st.session_state.chat_history.append(("user", user_input))
-        with chat_area:
-            with st.chat_message("user"):
-                st.write(user_input)
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    result = st.session_state.chat_worker.respond(user_input)
-                st.write(result["text"])
-                st.session_state.chat_history.append(("assistant", result["text"]))
+# --- Update the Chat Message Handler ---
+if prompt := st.chat_input("Ask about your posture..."):
+    # 1. Display user message
+    st.chat_message("user").markdown(prompt)
+    
+    # 2. FORCE THE CHATBOT TO READ LIVE STATE
+    # Instead of using a cached or old 'state' object, we explicitly
+    # pull the current values directly from st.session_state.shared
+    # which is being updated by the video processor loop.
+    current_state = st.session_state.shared
+    
+    # Now call your chatbot function (assuming you call 'answer' or 'ChatWorker')
+    # Use the 'current_state' variable so it sees your live posture
+    response = answer(user_question=prompt, state=current_state)
+    
+    # 3. Display assistant response
+    with st.chat_message("assistant"):
+        st.markdown(response["text"])
 
 # === Execution Control ===
 if IS_CLOUD and ctx.state.playing:
