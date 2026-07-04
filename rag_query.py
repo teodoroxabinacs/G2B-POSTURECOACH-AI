@@ -46,7 +46,7 @@ def answer(user_question: str, state: PostureState) -> dict:
     # Expand query with current state for better retrieval.
     expanded = user_question
     if state and posture:
-        conf_note = "" if state.is_reliable else " (partial view)"
+        conf_note = "" if getattr(state, 'is_reliable', True) else " (partial view)"
         expanded = (f"{user_question} "
                     f"[posture: {state.posture_class}{conf_note}, "
                     f"issue: {state.posture_class}]")
