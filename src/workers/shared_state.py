@@ -9,23 +9,36 @@ from src.state.posture_state import PostureState
 
 class SharedPostureState:
     def __init__(self, history_size: int = 4500):  # 5 min @ 15 fps
-        self._lock = threading.Lock()
-        self._current: Optional[PostureState] = None
-        self._history: deque = deque(maxlen=history_size)
-        self.is_reliable = True
+        # --- Core Cloud Metrics ---
+        self.posture_class = "correct_posture"
+        self.confidence = 0.0
+        self.ear_shoulder_offset_x = 0.0
+        self.shoulder_roll_z = 0.0
+        self.shoulder_tilt_angle = 0.0
+        
+        # --- System & RAG Fallbacks ---
+        self.is_reliable = True 
         self.feature_deviations = {} 
         self.primary_issue = None
         self.posture_distribution = {}
-
+        
         # --- Master Time Tracking Fallbacks ---
         self.posture_duration_sec = 0.0
         self.session_duration_sec = 0.0
         self.correction_events = 0
         self.longest_bad_posture_streak_sec = 0.0
-
-        # --- Deep Joint Angle Fallbacks ---
-        self.craniovertebral_angle = 0.0
         
+        # --- Exhaustive Biomechanical & Joint Angle Fallbacks ---
+        # Adding every variable the prompt builder might calculate
+        self.craniovertebral_angle = 0.0
+        self.torso_compression_ratio = 1.0  # Default to 1.0 to prevent division by zero logic errors
+        self.neck_inclination = 0.0
+        self.trunk_angle = 0.0
+        self.shoulder_balance = 0.0
+        self.hip_angle = 0.0
+        self.knee_angle = 0.0
+        self.spine_curve_index = 0.0
+
     def update(self, state: PostureState) -> None:
         with self._lock:
             self._current = state
