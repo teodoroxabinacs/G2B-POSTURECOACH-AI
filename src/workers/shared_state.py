@@ -12,7 +12,8 @@ class SharedPostureState:
         self._lock = threading.Lock()
         self._current: Optional[PostureState] = None
         self._history: deque = deque(maxlen=history_size)
-
+        self.is_reliable = True
+        
     def update(self, state: PostureState) -> None:
         with self._lock:
             self._current = state
