@@ -5,6 +5,7 @@ import cv2
 import av
 import streamlit as st
 import threading 
+from rag_query import answer
 from src.cv.pipeline import PosturePipeline 
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 
@@ -172,20 +173,14 @@ with left:
 
 # --- Update the Chat Message Handler ---
 if prompt := st.chat_input("Ask about your posture..."):
-    # 1. Display user message
     st.chat_message("user").markdown(prompt)
     
-    # 2. FORCE THE CHATBOT TO READ LIVE STATE
-    # Instead of using a cached or old 'state' object, we explicitly
-    # pull the current values directly from st.session_state.shared
-    # which is being updated by the video processor loop.
+    # Ensure current_state is pulled from the session before calling answer
     current_state = st.session_state.shared
     
-    # Now call your chatbot function (assuming you call 'answer' or 'ChatWorker')
-    # Use the 'current_state' variable so it sees your live posture
+    # This will now work because 'answer' is imported
     response = answer(user_question=prompt, state=current_state)
     
-    # 3. Display assistant response
     with st.chat_message("assistant"):
         st.markdown(response["text"])
 
