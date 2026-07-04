@@ -102,7 +102,7 @@ detected. These values are known and must be used:
 
 Available upper-body indicators (normal range in parens):
 - Forward head offset:   {state.ear_shoulder_offset_x:+.2f}  (normal < {NORMAL_THRESHOLDS['ear_shoulder_offset_x']:.2f})
-- Craniovertebral angle: {state.craniovertebral_angle:.0f} deg  (normal < {NORMAL_THRESHOLDS['craniovertebral_max']:.0f})
+- Craniovertebral angle: {getattr(state, 'craniovertebral_angle', 0.0):.0f} deg  (normal < {NORMAL_THRESHOLDS['craniovertebral_max']:.0f})
 - Shoulder forward roll: {state.shoulder_roll_z:+.2f}  (normal < {NORMAL_THRESHOLDS['shoulder_roll_z']:.2f})
 - Shoulder tilt:         {state.shoulder_tilt_angle:+.1f} deg  (normal < {NORMAL_THRESHOLDS['shoulder_tilt_abs_max']:.0f})
 

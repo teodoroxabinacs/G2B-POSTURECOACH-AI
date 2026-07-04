@@ -22,6 +22,9 @@ class SharedPostureState:
         self.session_duration_sec = 0.0
         self.correction_events = 0
         self.longest_bad_posture_streak_sec = 0.0
+
+        # --- Deep Joint Angle Fallbacks ---
+        self.craniovertebral_angle = 0.0
         
     def update(self, state: PostureState) -> None:
         with self._lock:
