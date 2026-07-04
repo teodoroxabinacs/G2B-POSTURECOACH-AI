@@ -87,7 +87,11 @@ class PostureProcessor(VideoProcessorBase):
                 # Boot at lowest complexity
                 self.pipe = PosturePipeline(model_complexity=0)
             except Exception as e:
-                # If this fails, trap the error so it prints on the screen
+                # Print the full error trace to the cloud terminal
+                import traceback
+                traceback.print_exc() 
+                
+                # Show the short error on the screen
                 self.error_msg = str(e)
                 return av.VideoFrame.from_ndarray(img, format="bgr24")
 
