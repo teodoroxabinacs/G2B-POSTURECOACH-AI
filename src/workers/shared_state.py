@@ -13,6 +13,8 @@ class SharedPostureState:
         self._current: Optional[PostureState] = None
         self._history: deque = deque(maxlen=history_size)
         self.is_reliable = True
+        self.feature_deviations = {} 
+        self.primary_issue = None
         
     def update(self, state: PostureState) -> None:
         with self._lock:

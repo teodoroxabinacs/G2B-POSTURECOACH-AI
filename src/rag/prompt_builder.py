@@ -63,7 +63,7 @@ Answer the user question now, following all the rules above."""
 
 
 def _format_observation(state: PostureState) -> str:
-    devs = state.feature_deviations
+    devs = getattr(state, 'feature_deviations', {})
     bad = [k for k, v in devs.items() if v > 0]
     bad_str = ", ".join(bad) if bad else "no major deviations"
     dist = ", ".join(f"{k}: {v*100:.0f}%"
