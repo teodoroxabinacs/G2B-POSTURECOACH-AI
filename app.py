@@ -61,17 +61,15 @@ if "shared" not in st.session_state:
 # === WebRTC AI Processor (Handles Bounding Box & Live AI) ===
 class PostureProcessor(VideoProcessorBase):
     def __init__(self):
-        # Queue to securely pass real-time AI data to the Streamlit UI
         self.result_queue = queue.Queue()
-        
-        # 1. IMPORTANT: Leave the pipeline empty during the initial setup!
-        # Do not initialize PosturePipeline here to avoid the WebRTC thread crash.
         self.pipe = None 
         
+        # Add a frame counter and a memory variable for the last known posture
+        self.frame_count = 0
+        self.last_state = None
+        
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
-        # 2. IMPORTANT: Boot MediaPipe ONLY when the first video frame arrives
         if self.pipe is None:
-            # This ensures MediaPipe starts safely in the video thread
             from src.cv.pipeline import PosturePipeline
             self.pipe = PosturePipeline(model_complexity=0)
 
@@ -79,27 +77,31 @@ class PostureProcessor(VideoProcessorBase):
         img = frame.to_ndarray(format="bgr24")
         h, w, _ = img.shape
         
-        # 3. PROCESS AI HERE: 
-        state = self.pipe.step(img)
-        
-        if state is not None:
-            # DRAW BOUNDING BOX ON VIDEO
+        # 1. THROTTLE THE AI: Only run the heavy math every 5 frames
+        self.frame_count += 1
+        if self.frame_count % 5 == 0:
+            self.last_state = self.pipe.step(img)
+            
+            # Send updated data to the UI only when the AI actually runs
+            if self.last_state is not None:
+                self.result_queue.put({
+                    "posture_class": self.last_state.posture_class,
+                    "confidence": self.last_state.confidence,
+                    "forward_head": self.last_state.ear_shoulder_offset_x,
+                    "shoulder_roll": self.last_state.shoulder_roll_z,
+                    "tilt": self.last_state.shoulder_tilt_angle
+                })
+
+        # 2. ALWAYS DRAW THE BOUNDING BOX (Prevents flickering)
+        # We use 'self.last_state' so the box stays on screen even on skipped frames
+        if self.last_state is not None:
             import cv2
             cv2.rectangle(img, (int(w*0.15), int(h*0.1)), (int(w*0.85), int(h*0.95)), (0, 255, 0), 2)
             
-            # Draw the real-time verdict and accuracy text on the video feed
-            label = f"{state.posture_class.upper()} | Conf: {state.confidence:.2f}"
+            label = f"{self.last_state.posture_class.upper()} | Conf: {self.last_state.confidence:.2f}"
             cv2.putText(img, label, (int(w*0.15), int(h*0.1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-            # SEND TO UI
-            self.result_queue.put({
-                "posture_class": state.posture_class,
-                "confidence": state.confidence,
-                "forward_head": state.ear_shoulder_offset_x,
-                "shoulder_roll": state.shoulder_roll_z,
-                "tilt": state.shoulder_tilt_angle
-            })
-
+        # Return the video frame instantly to keep the camera feed smooth
         return av.VideoFrame.from_ndarray(img, format="bgr24")
         
 # === Layout: two columns ===
