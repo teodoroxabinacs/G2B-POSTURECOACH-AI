@@ -67,7 +67,7 @@ def _format_observation(state: PostureState) -> str:
     bad = [k for k, v in devs.items() if v > 0]
     bad_str = ", ".join(bad) if bad else "no major deviations"
     dist = ", ".join(f"{k}: {v*100:.0f}%"
-                     for k, v in state.posture_distribution.items() if v > 0.05)
+                     for k, v in getattr(state, 'posture_distribution', {}).items() if v > 0.05)
     return f"""The user's camera currently shows:
 - Posture: {state.posture_class} (confidence {state.confidence:.2f})
 - Time in this posture: {state.posture_duration_sec:.0f} seconds

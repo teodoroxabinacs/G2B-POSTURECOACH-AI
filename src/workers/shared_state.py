@@ -15,6 +15,7 @@ class SharedPostureState:
         self.is_reliable = True
         self.feature_deviations = {} 
         self.primary_issue = None
+        self.posture_distribution = {}
         
     def update(self, state: PostureState) -> None:
         with self._lock:
