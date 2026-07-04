@@ -16,6 +16,12 @@ class SharedPostureState:
         self.feature_deviations = {} 
         self.primary_issue = None
         self.posture_distribution = {}
+
+        # --- Master Time Tracking Fallbacks ---
+        self.posture_duration_sec = 0.0
+        self.session_duration_sec = 0.0
+        self.correction_events = 0
+        self.longest_bad_posture_streak_sec = 0.0
         
     def update(self, state: PostureState) -> None:
         with self._lock:

@@ -91,14 +91,14 @@ def _format_partial_observation(state: PostureState) -> str:
     """Partial view (hips off-screen): report the upper-body measurements that
     ARE available and are reliable, and explicitly mark hip-based metrics as
     unavailable so the model does not invent or over-trust them."""
-    devs = state.feature_deviations
+    devs = getattr(state, 'feature_deviations', {})
     bad = [k for k, v in devs.items() if v > 0]
     bad_str = ", ".join(bad) if bad else "no major upper-body deviations"
     return f"""The camera currently has a PARTIAL view of the user (lower body /
 hips not fully visible), but the upper body IS visible and a posture has been
 detected. These values are known and must be used:
 - Detected posture: {state.posture_class} (confidence {state.confidence:.2f})
-- Time in this posture: {state.posture_duration_sec:.0f} seconds
+- Time in this posture: {getattr(state, 'posture_duration_sec', 0.0):.0f} seconds
 
 Available upper-body indicators (normal range in parens):
 - Forward head offset:   {state.ear_shoulder_offset_x:+.2f}  (normal < {NORMAL_THRESHOLDS['ear_shoulder_offset_x']:.2f})
