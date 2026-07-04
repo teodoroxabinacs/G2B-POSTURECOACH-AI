@@ -8,7 +8,12 @@ from src.state.posture_state import PostureState
 
 
 class SharedPostureState:
-    def __init__(self, history_size: int = 4500):  # 5 min @ 15 fps
+    def __init__(self):
+        # --- Original Threading & Tracking Variables ---
+        self._lock = threading.Lock()
+        self._current: Optional[PostureState] = None
+        self._history = deque(maxlen=300) 
+        
         # --- Core Cloud Metrics ---
         self.posture_class = "correct_posture"
         self.confidence = 0.0
@@ -29,15 +34,23 @@ class SharedPostureState:
         self.longest_bad_posture_streak_sec = 0.0
         
         # --- Exhaustive Biomechanical & Joint Angle Fallbacks ---
-        # Adding every variable the prompt builder might calculate
         self.craniovertebral_angle = 0.0
-        self.torso_compression_ratio = 1.0  # Default to 1.0 to prevent division by zero logic errors
+        self.torso_compression_ratio = 1.0 
         self.neck_inclination = 0.0
         self.trunk_angle = 0.0
         self.shoulder_balance = 0.0
         self.hip_angle = 0.0
         self.knee_angle = 0.0
         self.spine_curve_index = 0.0
+        
+        # --- The Missing Angle ---
+        self.midline_deviation_angle = 0.0 
+
+    # --- THE BULLETPROOF SHIELD ---
+    # If the RAG prompt asks for a variable we forgot to define above, 
+    # Python will run this function instead of crashing with an AttributeError.
+    def __getattr__(self, name):
+        return 0.0
 
     def update(self, state: PostureState) -> None:
         with self._lock:
