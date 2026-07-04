@@ -84,14 +84,11 @@ class PostureProcessor(VideoProcessorBase):
         if self.pipe is None:
             try:
                 from src.cv.pipeline import PosturePipeline
-                # Boot at lowest complexity
-                self.pipe = PosturePipeline(model_complexity=0)
+                # Revert to complexity 1 because it is pre-downloaded and won't trigger a PermissionError
+                self.pipe = PosturePipeline(model_complexity=1)
             except Exception as e:
-                # Print the full error trace to the cloud terminal
                 import traceback
                 traceback.print_exc() 
-                
-                # Show the short error on the screen
                 self.error_msg = str(e)
                 return av.VideoFrame.from_ndarray(img, format="bgr24")
 
