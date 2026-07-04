@@ -73,7 +73,7 @@ class PostureProcessor(VideoProcessorBase):
         if self.pipe is None:
             # This ensures MediaPipe starts safely in the video thread
             from src.cv.pipeline import PosturePipeline
-            self.pipe = PosturePipeline(model_complexity=1)
+            self.pipe = PosturePipeline(model_complexity=0)
 
         # Convert web frame to an image array
         img = frame.to_ndarray(format="bgr24")
@@ -119,21 +119,16 @@ with left:
     # Fetch live data from the video processor if it is running
     if ctx.state.playing and ctx.video_processor:
         try:
-            live_data = ctx.video_processor.result_queue.get(timeout=0.1)
-            st.session_state.shared.posture_class = live_data["posture_class"]
-            st.session_state.shared.confidence = live_data["confidence"]
-            st.session_state.shared.ear_shoulder_offset_x = live_data["forward_head"]
-            st.session_state.shared.shoulder_roll_z = live_data["shoulder_roll"]
-            st.session_state.shared.shoulder_tilt_angle = live_data["tilt"]
+            # Loop to drain the queue and ONLY keep the absolute latest frame
+            while not ctx.video_processor.result_queue.empty():
+                live_data = ctx.video_processor.result_queue.get_nowait()
+                st.session_state.shared.posture_class = live_data["posture_class"]
+                st.session_state.shared.confidence = live_data["confidence"]
+                st.session_state.shared.ear_shoulder_offset_x = live_data["forward_head"]
+                st.session_state.shared.shoulder_roll_z = live_data["shoulder_roll"]
+                st.session_state.shared.shoulder_tilt_angle = live_data["tilt"]
         except queue.Empty:
             pass
-    elif not ctx.state.playing:
-        # Reset back to zero if recording/streaming stops
-        st.session_state.shared.posture_class = "Waiting for video..."
-        st.session_state.shared.confidence = 0.0
-        st.session_state.shared.ear_shoulder_offset_x = 0.0
-        st.session_state.shared.shoulder_roll_z = 0.0
-        st.session_state.shared.shoulder_tilt_angle = 0.0
 
     st.markdown("---")
     
@@ -176,7 +171,7 @@ with right:
 # === Execution Control ===
 if IS_CLOUD and ctx.state.playing:
     import time
-    time.sleep(0.5)
+    time.sleep(0.1) # Faster refresh rate for real-time UI
     st.rerun()
 elif not IS_CLOUD:
     import time
