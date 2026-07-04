@@ -63,40 +63,46 @@ if "shared" not in st.session_state:
 class PostureProcessor(VideoProcessorBase):
     def __init__(self):
         self.result_queue = queue.Queue()
-        # Create a tiny 1-frame queue to pass images safely to the background AI
-        self.frame_queue = queue.Queue(maxsize=1) 
+        self.pipe = None 
+        self.frame_count = 0
         self.last_state = None
         
-        # This flag lets the UI know the AI is still cold-booting
-        self.ai_booting = True 
+        # New variable to catch and display hidden cloud crashes
+        self.error_msg = None 
 
-        # Start the AI in the background immediately
-        self.ai_thread = threading.Thread(target=self._run_ai, daemon=True)
-        self.ai_thread.start()
+    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+        import cv2
+        img = frame.to_ndarray(format="bgr24")
+        h, w, _ = img.shape
+        
+        # 1. CRASH HANDLER: If it broke, show the error on the camera feed
+        if self.error_msg:
+            cv2.putText(img, f"CRASH: {self.error_msg}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-    def _run_ai(self):
-        try:
-            from src.cv.pipeline import PosturePipeline
-            # Boot MediaPipe at lowest complexity for cloud speed
-            pipe = PosturePipeline(model_complexity=0)
-            self.ai_booting = False 
-            
-            while True:
-                # Wait for the next available webcam frame
-                img = self.frame_queue.get() 
-                state = pipe.step(img)
-                
+        # 2. BOOT THE AI (Accepting a brief 5-second video freeze on startup)
+        if self.pipe is None:
+            try:
+                from src.cv.pipeline import PosturePipeline
+                # Boot at lowest complexity
+                self.pipe = PosturePipeline(model_complexity=0)
+            except Exception as e:
+                # If this fails, trap the error so it prints on the screen
+                self.error_msg = str(e)
+                return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+        # 3. RUN AI EVERY 5TH FRAME (Prevents lagging)
+        self.frame_count += 1
+        if self.frame_count % 5 == 0:
+            try:
+                state = self.pipe.step(img)
                 if state is not None:
                     self.last_state = state
                     
-                    # Empty the queue so the Streamlit UI only gets the absolute freshest data
+                    # Flush old data so UI is instantly accurate
                     while not self.result_queue.empty():
-                        try:
-                            self.result_queue.get_nowait()
-                        except queue.Empty:
-                            break
-                            
-                    # Send the actual degrees down to the dashboard metrics
+                        self.result_queue.get_nowait()
+                        
                     self.result_queue.put({
                         "posture_class": state.posture_class,
                         "confidence": state.confidence,
@@ -104,30 +110,17 @@ class PostureProcessor(VideoProcessorBase):
                         "shoulder_roll": state.shoulder_roll_z,
                         "tilt": state.shoulder_tilt_angle
                     })
-        except Exception as e:
-            print(f"AI Pipeline Crash: {e}")
+            except Exception as e:
+                # Ignore intermittent frame glitches
+                pass 
 
-    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
-        import cv2
-        img = frame.to_ndarray(format="bgr24")
-        h, w, _ = img.shape
-        
-        # Toss a frame to the AI only if the background room is empty
-        if not self.frame_queue.full():
-            self.frame_queue.put_nowait(img)
-
-        # --- DRAW VISUAL FEEDBACK ON THE VIDEO ---
-        if self.ai_booting:
-            # Still loading the heavy model on the cloud CPU...
-            cv2.putText(img, "Loading... (Wait 5-10s)", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
-        elif self.last_state is None:
-            # Model is awake but hasn't locked onto your body yet
-            cv2.putText(img, "ANALYZING... (Make sure shoulders are visible)", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-        else:
-            # Locked in! Draw the bounding box and accuracy.
+        # 4. DRAW THE VISUALS
+        if self.last_state is not None:
             cv2.rectangle(img, (int(w*0.15), int(h*0.1)), (int(w*0.85), int(h*0.95)), (0, 255, 0), 2)
             label = f"{self.last_state.posture_class.upper()} | Conf: {self.last_state.confidence:.2f}"
             cv2.putText(img, label, (int(w*0.15), int(h*0.1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        else:
+            cv2.putText(img, "ANALYZING... (Make sure shoulders are visible)", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
         
